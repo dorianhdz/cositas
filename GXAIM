@@ -1,0 +1,557 @@
+--[[ 
+    GX MAGNET AIM v11 (Cortina UI & ESP Fix)
+    - NEW: Collapsible UI Sections (Accordion/Curtain style)
+    - FIXED: ESP/Diamond not appearing on new players (Added WaitForChild)
+    - FIXED: Team Color Logic
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local CoreGui = game:GetService("CoreGui")
+
+-- // CONFIGURACIÓN GLOBAL // --
+local Config = {
+    Enabled = true,
+    AimBind = Enum.KeyCode.E, 
+    
+    FOV = 100,             
+    Smoothness = 7.5,
+    TargetPart = "HumanoidRootPart", 
+    
+    ShowFOV = true,
+    FOV_Color = Color3.fromRGB(255, 255, 255),
+    
+    WallCheck = true,      
+    ESP_Enabled = true,
+    AutoShot = false,
+    
+    FriendlyList = {},
+    VisualsVisible = true, 
+    HideBind = Enum.KeyCode.RightAlt
+}
+
+-- Referencias UI
+local UI_Elements = { ToggleButton = nil }
+local CurrentParent = nil -- Para el sistema de pestañas
+
+-- // LIMPIEZA // --
+if CoreGui:FindFirstChild("GX_Magnet_v11") then
+    CoreGui.GX_Magnet_v11:Destroy()
+end
+
+-- // UI PRINCIPAL // --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GX_Magnet_v11"
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 280, 0, 600)
+MainFrame.Position = UDim2.new(0.05, 0, 0.1, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(45, 45, 45)
+Stroke.Thickness = 2
+Stroke.Parent = MainFrame
+
+-- Barra Superior
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 35)
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBar.Parent = MainFrame
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 10)
+
+local Title = Instance.new("TextLabel")
+Title.Text = "GX MAGNET AIM V6"
+Title.Size = UDim2.new(1, -40, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Text = "-"
+MinBtn.Size = UDim2.new(0, 35, 1, 0)
+MinBtn.Position = UDim2.new(1, -35, 0, 0)
+MinBtn.BackgroundTransparency = 1
+MinBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 18
+MinBtn.Parent = TopBar
+
+local IsMinimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    IsMinimized = not IsMinimized
+    if IsMinimized then
+        MainFrame:TweenSize(UDim2.new(0, 280, 0, 35), "Out", "Quad", 0.3, true)
+        MinBtn.Text = "+"
+    else
+        MainFrame:TweenSize(UDim2.new(0, 280, 0, 600), "Out", "Quad", 0.3, true)
+        MinBtn.Text = "-"
+    end
+end)
+
+-- Scroll Principal
+local MainScroll = Instance.new("ScrollingFrame")
+MainScroll.Size = UDim2.new(1, 0, 1, -40)
+MainScroll.Position = UDim2.new(0, 0, 0, 40)
+MainScroll.BackgroundTransparency = 1
+MainScroll.ScrollBarThickness = 2
+MainScroll.BorderSizePixel = 0
+MainScroll.Parent = MainFrame
+
+local MainLayout = Instance.new("UIListLayout")
+MainLayout.Parent = MainScroll
+MainLayout.Padding = UDim.new(0, 5)
+MainLayout.SortOrder = Enum.SortOrder.LayoutOrder
+MainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+MainLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    MainScroll.CanvasSize = UDim2.new(0, 0, 0, MainLayout.AbsoluteContentSize.Y + 10)
+end)
+
+-- // SISTEMA DE PESTAÑAS (CORTINA) // --
+local function CreateSection(Text, StartOpen)
+    -- Botón Cabecera
+    local HeaderBtn = Instance.new("TextButton")
+    HeaderBtn.Size = UDim2.new(0.95, 0, 0, 30)
+    HeaderBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    HeaderBtn.Text = (StartOpen and " ▼ " or " ▶ ") .. Text
+    HeaderBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HeaderBtn.Font = Enum.Font.GothamBold
+    HeaderBtn.TextSize = 12
+    HeaderBtn.TextXAlignment = Enum.TextXAlignment.Left
+    HeaderBtn.Parent = MainScroll
+    Instance.new("UICorner", HeaderBtn).CornerRadius = UDim.new(0, 6)
+    
+    -- Contenedor de items
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(0.95, 0, 0, 0) -- Altura automática
+    Container.BackgroundTransparency = 1
+    Container.Visible = StartOpen
+    Container.ClipsDescendants = true
+    Container.Parent = MainScroll
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Parent = Container
+    Layout.SortOrder = Enum.SortOrder.LayoutOrder
+    Layout.Padding = UDim.new(0, 5)
+    
+    -- Auto-ajuste de altura
+    Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Container.Size = UDim2.new(0.95, 0, 0, Layout.AbsoluteContentSize.Y + 5)
+    end)
+    
+    -- Lógica de abrir/cerrar
+    HeaderBtn.MouseButton1Click:Connect(function()
+        Container.Visible = not Container.Visible
+        HeaderBtn.Text = (Container.Visible and " ▼ " or " ▶ ") .. Text
+    end)
+    
+    CurrentParent = Container -- Establecer este contenedor como padre actual
+    return Container
+end
+
+-- // HELPERS UI (Ahora usan CurrentParent) // --
+local function CreateToggle(Text, Default, Callback, ReferenceName)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, 0, 0, 30)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = CurrentParent
+    
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 1, 0)
+    Button.BackgroundColor3 = Default and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(40, 40, 40)
+    Button.Text = Text .. ": " .. (Default and "ON" or "OFF")
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.GothamSemibold
+    Button.TextSize = 11
+    Button.Parent = Frame
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
+    
+    if ReferenceName then UI_Elements[ReferenceName] = Button end
+    
+    Button.MouseButton1Click:Connect(function()
+        if ReferenceName == "ToggleButton" then
+            Config.Enabled = not Config.Enabled
+            Button.BackgroundColor3 = Config.Enabled and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(40, 40, 40)
+            Button.Text = Text .. ": " .. (Config.Enabled and "ON" or "OFF")
+        else
+            local NewState = not (Button.BackgroundColor3 == Color3.fromRGB(40, 200, 80))
+            Button.BackgroundColor3 = NewState and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(40, 40, 40)
+            Button.Text = Text .. ": " .. (NewState and "ON" or "OFF")
+            Callback(NewState)
+        end
+    end)
+end
+
+local function CreateSlider(Text, Min, Max, Step, Default, Callback)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, 0, 0, 40)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = CurrentParent
+    
+    local Label = Instance.new("TextLabel")
+    Label.Text = Text .. ": " .. Default
+    Label.Size = UDim2.new(1, 0, 0, 20)
+    Label.BackgroundTransparency = 1
+    Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 11
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+    
+    local SliderBG = Instance.new("Frame")
+    SliderBG.Size = UDim2.new(1, 0, 0, 6)
+    SliderBG.Position = UDim2.new(0, 0, 0, 25)
+    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    SliderBG.Parent = Frame
+    Instance.new("UICorner", SliderBG).CornerRadius = UDim.new(1, 0)
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Size = UDim2.new((Default - Min) / (Max - Min), 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+    SliderFill.Parent = SliderBG
+    Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local Trigger = Instance.new("TextButton")
+    Trigger.Size = UDim2.new(1, 0, 1, 0)
+    Trigger.BackgroundTransparency = 1
+    Trigger.Text = ""
+    Trigger.Parent = SliderBG
+    
+    local Dragging = false
+    Trigger.MouseButton1Down:Connect(function() Dragging = true end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then Dragging = false end end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local MousePos = UserInputService:GetMouseLocation().X
+            local SliderPos = SliderBG.AbsolutePosition.X
+            local SliderSize = SliderBG.AbsoluteSize.X
+            local Percent = math.clamp((MousePos - SliderPos) / SliderSize, 0, 1)
+            local Value = math.floor((Min + (Max - Min) * Percent) / Step + 0.5) * Step
+            Value = math.floor(Value * 100) / 100
+            SliderFill.Size = UDim2.new(Percent, 0, 1, 0)
+            Label.Text = Text .. ": " .. Value
+            Callback(Value)
+        end
+    end)
+end
+
+local function CreateBind(Text, Default, Callback)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 30)
+    Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Button.Text = Text .. ": [" .. (Default.Name or string.sub(tostring(Default), 14)) .. "]"
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.GothamSemibold
+    Button.TextSize = 11
+    Button.Parent = CurrentParent
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
+    
+    local Waiting = false
+    Button.MouseButton1Click:Connect(function()
+        Waiting = true
+        Button.Text = "PRESIONA UNA TECLA..."
+        Button.BackgroundColor3 = Color3.fromRGB(200, 150, 40)
+    end)
+    
+    UserInputService.InputBegan:Connect(function(input)
+        if Waiting then
+            if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
+                local Key = (input.UserInputType == Enum.UserInputType.Keyboard) and input.KeyCode or input.UserInputType
+                Waiting = false
+                Button.Text = Text .. ": [" .. (Key.Name or string.sub(tostring(Key), 14)) .. "]"
+                Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                Callback(Key)
+            end
+        end
+    end)
+end
+
+-- // --- CONSTRUCCIÓN DEL MENÚ (SECCIONES) --- // --
+
+CreateSection("PRINCIPAL", true) -- Abierto por defecto
+CreateToggle("ACTIVAR IMÁN (Master)", Config.Enabled, function(Val) Config.Enabled = Val end, "ToggleButton")
+CreateBind("TECLA DE TOGGLE", Config.AimBind, function(Val) Config.AimBind = Val end)
+CreateBind("TECLA OCULTAR GUI", Config.HideBind, function(Val) Config.HideBind = Val end)
+
+CreateSection("CONFIGURACIÓN AIM", false)
+CreateSlider("Radio FOV", 10, 500, 5, Config.FOV, function(Val) Config.FOV = Val end)
+CreateSlider("Suavidad", 1, 20, 0.5, Config.Smoothness, function(Val) Config.Smoothness = Val end)
+
+CreateSection("VISUALES (ESP)", false)
+CreateToggle("ESP SILUETA + DIAMANTE", Config.ESP_Enabled, function(Val) 
+    Config.ESP_Enabled = Val 
+    -- Refresh manual instantáneo
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Character then
+            if v.Character:FindFirstChild("MinimalistESP") then v.Character.MinimalistESP.Enabled = Val end
+            if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("DiamondESP") then v.Character.Head.DiamondESP.Enabled = Val end
+        end
+    end
+end)
+
+-- RGB Slider
+local R, G, B = 255, 255, 255
+local function UpdateColor() Config.FOV_Color = Color3.fromRGB(R, G, B) end
+CreateSlider("Color FOV (R)", 0, 255, 1, 255, function(Val) R = Val; UpdateColor() end)
+CreateSlider("Color FOV (G)", 0, 255, 1, 255, function(Val) G = Val; UpdateColor() end)
+CreateSlider("Color FOV (B)", 0, 255, 1, 255, function(Val) B = Val; UpdateColor() end)
+
+CreateSection("EXTRAS", false)
+CreateToggle("AUTO SHOT", Config.AutoShot, function(Val) Config.AutoShot = Val end)
+CreateToggle("WALL CHECK", Config.WallCheck, function(Val) Config.WallCheck = Val end)
+
+CreateSection("EQUIPOS", true)
+local SearchBar = Instance.new("TextBox")
+SearchBar.Size = UDim2.new(1, 0, 0, 30)
+SearchBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+SearchBar.PlaceholderText = "Buscar jugador..."
+SearchBar.Text = ""
+SearchBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBar.Font = Enum.Font.Gotham
+SearchBar.TextSize = 12
+SearchBar.Parent = CurrentParent -- Se agrega a la sección actual
+Instance.new("UICorner", SearchBar).CornerRadius = UDim.new(0, 6)
+
+local PlayerScroll = Instance.new("ScrollingFrame")
+PlayerScroll.Size = UDim2.new(1, 0, 0, 150)
+PlayerScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+PlayerScroll.BorderSizePixel = 0
+PlayerScroll.Parent = CurrentParent
+Instance.new("UICorner", PlayerScroll).CornerRadius = UDim.new(0, 6)
+
+local ScrollList = Instance.new("UIListLayout")
+ScrollList.Parent = PlayerScroll
+ScrollList.Padding = UDim.new(0, 4)
+ScrollList.SortOrder = Enum.SortOrder.Name
+
+-- // ACTUALIZAR BOTÓN DESDE TECLA // --
+local function UpdateUIFromKeybind()
+    if UI_Elements.ToggleButton then
+        UI_Elements.ToggleButton.BackgroundColor3 = Config.Enabled and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(40, 40, 40)
+        UI_Elements.ToggleButton.Text = "ACTIVAR IMÁN (Master): " .. (Config.Enabled and "ON" or "OFF")
+    end
+end
+
+-- // LOGICA KEYBINDS PRINCIPAL // --
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end 
+    
+    if input.KeyCode == Config.HideBind then
+        Config.VisualsVisible = not Config.VisualsVisible
+        MainFrame.Visible = Config.VisualsVisible
+        for _, v in pairs(Players:GetPlayers()) do
+            if v.Character then
+                if v.Character:FindFirstChild("MinimalistESP") then v.Character.MinimalistESP.Enabled = Config.VisualsVisible and Config.ESP_Enabled end
+                if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("DiamondESP") then v.Character.Head.DiamondESP.Enabled = Config.VisualsVisible and Config.ESP_Enabled end
+            end
+        end
+    end
+    
+    if input.UserInputType == Config.AimBind or input.KeyCode == Config.AimBind then
+        Config.Enabled = not Config.Enabled 
+        UpdateUIFromKeybind() 
+    end
+end)
+
+-- // VISUALS // --
+local Circle = Drawing.new("Circle")
+Circle.Thickness = 1.5
+Circle.Transparency = 0.5
+Circle.NumSides = 64
+Circle.Filled = false
+
+-- // ESP LOGIC (FIXED) // --
+local function UpdateESP(Player)
+    if Player == LocalPlayer then return end
+    
+    -- Usamos task.spawn para que si un jugador tarda en cargar, no congele el resto
+    task.spawn(function()
+        local function AddVisuals(Char)
+            -- Esperar a que el personaje cargue partes críticas
+            local Head = Char:WaitForChild("Head", 10) -- Espera hasta 10 seg
+            if not Head then return end
+            
+            -- 1. Silueta
+            if not Char:FindFirstChild("MinimalistESP") then
+                local HL = Instance.new("Highlight")
+                HL.Name = "MinimalistESP"
+                HL.Adornee = Char
+                HL.FillTransparency = 1 
+                HL.OutlineTransparency = 0
+                HL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                HL.Enabled = Config.ESP_Enabled and Config.VisualsVisible
+                HL.Parent = Char
+            end
+            
+            -- 2. Diamante
+            if not Head:FindFirstChild("DiamondESP") then
+                local BG = Instance.new("BillboardGui")
+                BG.Name = "DiamondESP"
+                BG.Adornee = Head
+                BG.Size = UDim2.new(0, 12, 0, 12)
+                BG.StudsOffset = Vector3.new(0, 3, 0) 
+                BG.AlwaysOnTop = true
+                BG.Enabled = Config.ESP_Enabled and Config.VisualsVisible
+                BG.Parent = Head
+                
+                local Diamond = Instance.new("Frame")
+                Diamond.Size = UDim2.new(1, 0, 1, 0)
+                Diamond.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                Diamond.Rotation = 45 
+                Diamond.BorderSizePixel = 0
+                Diamond.Parent = BG
+                
+                local Shadow = Instance.new("UIStroke")
+                Shadow.Color = Color3.fromRGB(0, 0, 0)
+                Shadow.Thickness = 2
+                Shadow.Parent = Diamond
+            end
+            
+            -- Aplicar Color Inicial
+            local HL = Char:FindFirstChild("MinimalistESP")
+            local Dia = Head:FindFirstChild("DiamondESP") and Head.DiamondESP:FindFirstChild("Frame")
+            local Color = Config.FriendlyList[Player.Name] and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            
+            if HL then HL.OutlineColor = Color end
+            if Dia then Dia.BackgroundColor3 = Color end
+        end
+        
+        if Player.Character then AddVisuals(Player.Character) end
+        Player.CharacterAdded:Connect(AddVisuals)
+    end)
+end
+
+for _, v in pairs(Players:GetPlayers()) do UpdateESP(v) end
+Players.PlayerAdded:Connect(UpdateESP)
+
+-- // TEAM MANAGER // --
+local function RefreshPlayerList()
+    local SearchText = SearchBar.Text:lower()
+    for _, child in pairs(PlayerScroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            if SearchText == "" or string.find(plr.Name:lower(), SearchText) then
+                local Btn = Instance.new("TextButton")
+                Btn.Name = plr.Name
+                Btn.Size = UDim2.new(1, 0, 0, 25)
+                Btn.Font = Enum.Font.GothamSemibold
+                Btn.TextSize = 12
+                Btn.Parent = PlayerScroll
+                Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
+                
+                local isFriend = Config.FriendlyList[plr.Name]
+                Btn.Text = plr.Name .. (isFriend and " [FRIEND]" or " [ENEMY]")
+                Btn.BackgroundColor3 = isFriend and Color3.fromRGB(40, 150, 60) or Color3.fromRGB(50, 50, 50)
+                Btn.TextColor3 = isFriend and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+                
+                Btn.MouseButton1Click:Connect(function()
+                    if Config.FriendlyList[plr.Name] then
+                        Config.FriendlyList[plr.Name] = nil
+                    else
+                        Config.FriendlyList[plr.Name] = true
+                    end
+                    local newFriend = Config.FriendlyList[plr.Name]
+                    Btn.Text = plr.Name .. (newFriend and " [FRIEND]" or " [ENEMY]")
+                    Btn.BackgroundColor3 = newFriend and Color3.fromRGB(40, 150, 60) or Color3.fromRGB(50, 50, 50)
+                    Btn.TextColor3 = newFriend and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+                    
+                    if plr.Character then
+                        local HL = plr.Character:FindFirstChild("MinimalistESP")
+                        local Dia = plr.Character:FindFirstChild("Head") and plr.Character.Head:FindFirstChild("DiamondESP") and plr.Character.Head.DiamondESP:FindFirstChild("Frame")
+                        local C = newFriend and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                        if HL then HL.OutlineColor = C end
+                        if Dia then Dia.BackgroundColor3 = C end
+                    end
+                end)
+            end
+        end
+    end
+end
+SearchBar:GetPropertyChangedSignal("Text"):Connect(RefreshPlayerList)
+Players.PlayerAdded:Connect(RefreshPlayerList)
+Players.PlayerRemoving:Connect(RefreshPlayerList)
+RefreshPlayerList()
+
+-- // UTILS // --
+local function IsPlayerVisible(TargetChar)
+    if not Config.WallCheck then return true end
+    local Origin = Camera.CFrame.Position
+    local Destination = TargetChar[Config.TargetPart].Position
+    local Direction = Destination - Origin
+    local Params = RaycastParams.new()
+    Params.FilterDescendantsInstances = {LocalPlayer.Character, TargetChar}
+    Params.FilterType = Enum.RaycastFilterType.Exclude
+    local Result = workspace:Raycast(Origin, Direction, Params)
+    return Result == nil
+end
+
+local function GetTarget()
+    local MouseLoc = UserInputService:GetMouseLocation()
+    local Closest = nil
+    local MinDist = Config.FOV
+
+    for _, v in pairs(Players:GetPlayers()) do
+        if v == LocalPlayer or Config.FriendlyList[v.Name] then continue end 
+        
+        if v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local Root = v.Character:FindFirstChild(Config.TargetPart) or v.Character:FindFirstChild("Torso")
+            if Root then
+                local Pos, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+                if OnScreen then
+                    local Dist = (Vector2.new(Pos.X, Pos.Y) - MouseLoc).Magnitude
+                    if Dist < MinDist then
+                        if IsPlayerVisible(v.Character) then
+                            MinDist = Dist
+                            Closest = v
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return Closest
+end
+
+-- // LOOP PRINCIPAL // --
+RunService.RenderStepped:Connect(function()
+    Circle.Position = UserInputService:GetMouseLocation()
+    Circle.Radius = Config.FOV
+    Circle.Color = Config.FOV_Color
+    Circle.Visible = Config.Enabled and Config.ShowFOV and Config.VisualsVisible
+    
+    if Config.Enabled then
+        local Target = GetTarget()
+        if Target then
+            local Root = Target.Character:FindFirstChild(Config.TargetPart) or Target.Character:FindFirstChild("Torso")
+            if Root then
+                local TargetPos = Camera:WorldToViewportPoint(Root.Position)
+                local MousePos = UserInputService:GetMouseLocation()
+                local DistX = TargetPos.X - MousePos.X
+                local DistY = TargetPos.Y - MousePos.Y
+                
+                if Config.AutoShot then
+                    local Mag = math.sqrt(DistX^2 + DistY^2)
+                    if Mag < 15 then mouse1click() end
+                end
+                
+                mousemoverel(DistX / Config.Smoothness, DistY / Config.Smoothness)
+            end
+        end
+    end
+end)
