@@ -1,8 +1,10 @@
 --[[ 
-    GX MAGNET AIM v11 (Cortina UI & ESP Fix)
-    - NEW: Collapsible UI Sections (Accordion/Curtain style)
-    - FIXED: ESP/Diamond not appearing on new players (Added WaitForChild)
-    - FIXED: Team Color Logic
+    GX MAGNET AIM v12 (Health Check & Distance Fix)
+    - UPDATE: Diamond hides instantly on death/downed.
+    - UPDATE: Diamond only visible within 100 studs.
+    - UPDATE: New Smoothness Logic (0 = Smooth, 10 = Lock).
+    - FIXED: "Avoidance" bug on high lock settings.
+    - BINDS: Default Q (Toggle) and C (Hide).
 ]]
 
 local Players = game:GetService("Players")
@@ -15,36 +17,37 @@ local CoreGui = game:GetService("CoreGui")
 -- // CONFIGURACIÓN GLOBAL // --
 local Config = {
     Enabled = true,
-    AimBind = Enum.KeyCode.E, 
+    AimBind = Enum.KeyCode.Q, -- CAMBIO: Toggle en Q
     
-    FOV = 100,             
-    Smoothness = 7.5,
+    FOV = 100,              
+    Smoothness = 7.5,       -- Valor por defecto (Rango 0 - 10)
     TargetPart = "HumanoidRootPart", 
     
     ShowFOV = true,
     FOV_Color = Color3.fromRGB(255, 255, 255),
     
-    WallCheck = true,      
+    WallCheck = true,       
     ESP_Enabled = true,
+    ESP_MaxDist = 100,      -- CAMBIO: Distancia máxima para el rombo
     AutoShot = false,
     
     FriendlyList = {},
     VisualsVisible = true, 
-    HideBind = Enum.KeyCode.RightAlt
+    HideBind = Enum.KeyCode.C -- CAMBIO: Ocultar en C
 }
 
 -- Referencias UI
 local UI_Elements = { ToggleButton = nil }
-local CurrentParent = nil -- Para el sistema de pestañas
+local CurrentParent = nil 
 
 -- // LIMPIEZA // --
-if CoreGui:FindFirstChild("GX_Magnet_v11") then
-    CoreGui.GX_Magnet_v11:Destroy()
+if CoreGui:FindFirstChild("GX_Magnet_v12") then
+    CoreGui.GX_Magnet_v12:Destroy()
 end
 
 -- // UI PRINCIPAL // --
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "GX_Magnet_v11"
+ScreenGui.Name = "GX_Magnet_v12"
 ScreenGui.Parent = CoreGui
 
 local MainFrame = Instance.new("Frame")
@@ -70,7 +73,7 @@ TopBar.Parent = MainFrame
 Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 10)
 
 local Title = Instance.new("TextLabel")
-Title.Text = "GX MAGNET AIM V6"
+Title.Text = "GX MAGNET AIM V12"
 Title.Size = UDim2.new(1, -40, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
 Title.BackgroundTransparency = 1
@@ -121,9 +124,8 @@ MainLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     MainScroll.CanvasSize = UDim2.new(0, 0, 0, MainLayout.AbsoluteContentSize.Y + 10)
 end)
 
--- // SISTEMA DE PESTAÑAS (CORTINA) // --
+-- // SISTEMA DE PESTAÑAS // --
 local function CreateSection(Text, StartOpen)
-    -- Botón Cabecera
     local HeaderBtn = Instance.new("TextButton")
     HeaderBtn.Size = UDim2.new(0.95, 0, 0, 30)
     HeaderBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
@@ -135,9 +137,8 @@ local function CreateSection(Text, StartOpen)
     HeaderBtn.Parent = MainScroll
     Instance.new("UICorner", HeaderBtn).CornerRadius = UDim.new(0, 6)
     
-    -- Contenedor de items
     local Container = Instance.new("Frame")
-    Container.Size = UDim2.new(0.95, 0, 0, 0) -- Altura automática
+    Container.Size = UDim2.new(0.95, 0, 0, 0)
     Container.BackgroundTransparency = 1
     Container.Visible = StartOpen
     Container.ClipsDescendants = true
@@ -148,22 +149,20 @@ local function CreateSection(Text, StartOpen)
     Layout.SortOrder = Enum.SortOrder.LayoutOrder
     Layout.Padding = UDim.new(0, 5)
     
-    -- Auto-ajuste de altura
     Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         Container.Size = UDim2.new(0.95, 0, 0, Layout.AbsoluteContentSize.Y + 5)
     end)
     
-    -- Lógica de abrir/cerrar
     HeaderBtn.MouseButton1Click:Connect(function()
         Container.Visible = not Container.Visible
         HeaderBtn.Text = (Container.Visible and " ▼ " or " ▶ ") .. Text
     end)
     
-    CurrentParent = Container -- Establecer este contenedor como padre actual
+    CurrentParent = Container
     return Container
 end
 
--- // HELPERS UI (Ahora usan CurrentParent) // --
+-- // HELPERS UI // --
 local function CreateToggle(Text, Default, Callback, ReferenceName)
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(1, 0, 0, 30)
@@ -281,28 +280,22 @@ local function CreateBind(Text, Default, Callback)
     end)
 end
 
--- // --- CONSTRUCCIÓN DEL MENÚ (SECCIONES) --- // --
+-- // --- SECCIONES DEL MENÚ --- // --
 
-CreateSection("PRINCIPAL", true) -- Abierto por defecto
+CreateSection("PRINCIPAL", true) 
 CreateToggle("ACTIVAR IMÁN (Master)", Config.Enabled, function(Val) Config.Enabled = Val end, "ToggleButton")
 CreateBind("TECLA DE TOGGLE", Config.AimBind, function(Val) Config.AimBind = Val end)
 CreateBind("TECLA OCULTAR GUI", Config.HideBind, function(Val) Config.HideBind = Val end)
 
 CreateSection("CONFIGURACIÓN AIM", false)
 CreateSlider("Radio FOV", 10, 500, 5, Config.FOV, function(Val) Config.FOV = Val end)
-CreateSlider("Suavidad", 1, 20, 0.5, Config.Smoothness, function(Val) Config.Smoothness = Val end)
+-- CAMBIO: Slider de 0 a 10 con saltos de 0.5
+CreateSlider("Fijación (0=Suave, 10=Fijo)", 0, 10, 0.5, Config.Smoothness, function(Val) Config.Smoothness = Val end)
 
 CreateSection("VISUALES (ESP)", false)
-CreateToggle("ESP SILUETA + DIAMANTE", Config.ESP_Enabled, function(Val) 
-    Config.ESP_Enabled = Val 
-    -- Refresh manual instantáneo
-    for _, v in pairs(Players:GetPlayers()) do
-        if v.Character then
-            if v.Character:FindFirstChild("MinimalistESP") then v.Character.MinimalistESP.Enabled = Val end
-            if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("DiamondESP") then v.Character.Head.DiamondESP.Enabled = Val end
-        end
-    end
-end)
+CreateToggle("ESP SILUETA + DIAMANTE", Config.ESP_Enabled, function(Val) Config.ESP_Enabled = Val end)
+-- CAMBIO: Slider de distancia de renderizado del rombo
+CreateSlider("Distancia Rombo (Studs)", 50, 1000, 50, Config.ESP_MaxDist, function(Val) Config.ESP_MaxDist = Val end)
 
 -- RGB Slider
 local R, G, B = 255, 255, 255
@@ -324,7 +317,7 @@ SearchBar.Text = ""
 SearchBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 SearchBar.Font = Enum.Font.Gotham
 SearchBar.TextSize = 12
-SearchBar.Parent = CurrentParent -- Se agrega a la sección actual
+SearchBar.Parent = CurrentParent 
 Instance.new("UICorner", SearchBar).CornerRadius = UDim.new(0, 6)
 
 local PlayerScroll = Instance.new("ScrollingFrame")
@@ -347,17 +340,21 @@ local function UpdateUIFromKeybind()
     end
 end
 
--- // LOGICA KEYBINDS PRINCIPAL // --
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end 
     
     if input.KeyCode == Config.HideBind then
         Config.VisualsVisible = not Config.VisualsVisible
         MainFrame.Visible = Config.VisualsVisible
-        for _, v in pairs(Players:GetPlayers()) do
-            if v.Character then
-                if v.Character:FindFirstChild("MinimalistESP") then v.Character.MinimalistESP.Enabled = Config.VisualsVisible and Config.ESP_Enabled end
-                if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("DiamondESP") then v.Character.Head.DiamondESP.Enabled = Config.VisualsVisible and Config.ESP_Enabled end
+        -- Ocultar inmediatamente al pulsar tecla
+        if not Config.VisualsVisible then
+            for _, v in pairs(Players:GetPlayers()) do
+                if v.Character then
+                    local HL = v.Character:FindFirstChild("MinimalistESP")
+                    local Dia = v.Character.Head and v.Character.Head:FindFirstChild("DiamondESP")
+                    if HL then HL.Enabled = false end
+                    if Dia then Dia.Enabled = false end
+                end
             end
         end
     end
@@ -375,69 +372,107 @@ Circle.Transparency = 0.5
 Circle.NumSides = 64
 Circle.Filled = false
 
--- // ESP LOGIC (FIXED) // --
-local function UpdateESP(Player)
-    if Player == LocalPlayer then return end
-    
-    -- Usamos task.spawn para que si un jugador tarda en cargar, no congele el resto
-    task.spawn(function()
-        local function AddVisuals(Char)
-            -- Esperar a que el personaje cargue partes críticas
-            local Head = Char:WaitForChild("Head", 10) -- Espera hasta 10 seg
-            if not Head then return end
-            
-            -- 1. Silueta
-            if not Char:FindFirstChild("MinimalistESP") then
-                local HL = Instance.new("Highlight")
-                HL.Name = "MinimalistESP"
-                HL.Adornee = Char
-                HL.FillTransparency = 1 
-                HL.OutlineTransparency = 0
-                HL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                HL.Enabled = Config.ESP_Enabled and Config.VisualsVisible
-                HL.Parent = Char
-            end
-            
-            -- 2. Diamante
-            if not Head:FindFirstChild("DiamondESP") then
-                local BG = Instance.new("BillboardGui")
-                BG.Name = "DiamondESP"
-                BG.Adornee = Head
-                BG.Size = UDim2.new(0, 12, 0, 12)
-                BG.StudsOffset = Vector3.new(0, 3, 0) 
-                BG.AlwaysOnTop = true
-                BG.Enabled = Config.ESP_Enabled and Config.VisualsVisible
-                BG.Parent = Head
-                
-                local Diamond = Instance.new("Frame")
-                Diamond.Size = UDim2.new(1, 0, 1, 0)
-                Diamond.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Diamond.Rotation = 45 
-                Diamond.BorderSizePixel = 0
-                Diamond.Parent = BG
-                
-                local Shadow = Instance.new("UIStroke")
-                Shadow.Color = Color3.fromRGB(0, 0, 0)
-                Shadow.Thickness = 2
-                Shadow.Parent = Diamond
-            end
-            
-            -- Aplicar Color Inicial
-            local HL = Char:FindFirstChild("MinimalistESP")
-            local Dia = Head:FindFirstChild("DiamondESP") and Head.DiamondESP:FindFirstChild("Frame")
-            local Color = Config.FriendlyList[Player.Name] and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            
-            if HL then HL.OutlineColor = Color end
-            if Dia then Dia.BackgroundColor3 = Color end
+-- // ESP LOGIC - CREACIÓN // --
+local function CreateVisuals(Player)
+    local function AddToChar(Char)
+        local Head = Char:WaitForChild("Head", 10)
+        if not Head then return end
+        
+        -- 1. Silueta
+        if not Char:FindFirstChild("MinimalistESP") then
+            local HL = Instance.new("Highlight")
+            HL.Name = "MinimalistESP"
+            HL.Adornee = Char
+            HL.FillTransparency = 1 
+            HL.OutlineTransparency = 0
+            HL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            HL.Enabled = false -- Se activa en el loop
+            HL.Parent = Char
         end
         
-        if Player.Character then AddVisuals(Player.Character) end
-        Player.CharacterAdded:Connect(AddVisuals)
-    end)
+        -- 2. Diamante
+        if not Head:FindFirstChild("DiamondESP") then
+            local BG = Instance.new("BillboardGui")
+            BG.Name = "DiamondESP"
+            BG.Adornee = Head
+            BG.Size = UDim2.new(0, 12, 0, 12)
+            BG.StudsOffset = Vector3.new(0, 3, 0) 
+            BG.AlwaysOnTop = true
+            BG.Enabled = false -- Se activa en el loop
+            BG.Parent = Head
+            
+            local Diamond = Instance.new("Frame")
+            Diamond.Size = UDim2.new(1, 0, 1, 0)
+            Diamond.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            Diamond.Rotation = 45 
+            Diamond.BorderSizePixel = 0
+            Diamond.Parent = BG
+            
+            local Shadow = Instance.new("UIStroke")
+            Shadow.Color = Color3.fromRGB(0, 0, 0)
+            Shadow.Thickness = 2
+            Shadow.Parent = Diamond
+        end
+    end
+    
+    if Player.Character then AddToChar(Player.Character) end
+    Player.CharacterAdded:Connect(AddToChar)
 end
 
-for _, v in pairs(Players:GetPlayers()) do UpdateESP(v) end
-Players.PlayerAdded:Connect(UpdateESP)
+for _, v in pairs(Players:GetPlayers()) do 
+    if v ~= LocalPlayer then CreateVisuals(v) end 
+end
+Players.PlayerAdded:Connect(function(v) 
+    if v ~= LocalPlayer then CreateVisuals(v) end 
+end)
+
+-- // ESP LOGIC - ACTUALIZACIÓN (LOOP) // --
+-- Este loop arregla el problema de los rombos en muertos y la distancia
+RunService.RenderStepped:Connect(function()
+    if not Config.VisualsVisible or not Config.ESP_Enabled then return end
+    
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character then
+            local Char = Player.Character
+            local Head = Char:FindFirstChild("Head")
+            local Hum = Char:FindFirstChild("Humanoid")
+            local Root = Char:FindFirstChild("HumanoidRootPart")
+            
+            if Head and Hum and Root then
+                local HL = Char:FindFirstChild("MinimalistESP")
+                local BG = Head:FindFirstChild("DiamondESP")
+                
+                -- CONDICIONES DE VISIBILIDAD
+                -- 1. Vida > 0 (Arregla problema de derribados)
+                local IsAlive = Hum.Health > 0
+                -- 2. Distancia (Arregla problema visual lejano)
+                local Dist = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) 
+                             and (LocalPlayer.Character.HumanoidRootPart.Position - Root.Position).Magnitude 
+                             or 9999
+                local InRange = Dist <= Config.ESP_MaxDist
+                
+                local ShouldShow = IsAlive and Config.ESP_Enabled and Config.VisualsVisible
+                
+                -- Color Logic
+                local IsFriend = Config.FriendlyList[Player.Name]
+                local TeamColor = IsFriend and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                
+                if HL then 
+                    HL.Enabled = ShouldShow
+                    HL.OutlineColor = TeamColor
+                end
+                
+                if BG then 
+                    -- El diamante solo si está vivo Y en rango
+                    BG.Enabled = ShouldShow and InRange
+                    if BG:FindFirstChild("Frame") then
+                        BG.Frame.BackgroundColor3 = TeamColor
+                    end
+                end
+            end
+        end
+    end
+end)
 
 -- // TEAM MANAGER // --
 local function RefreshPlayerList()
@@ -466,18 +501,7 @@ local function RefreshPlayerList()
                     else
                         Config.FriendlyList[plr.Name] = true
                     end
-                    local newFriend = Config.FriendlyList[plr.Name]
-                    Btn.Text = plr.Name .. (newFriend and " [FRIEND]" or " [ENEMY]")
-                    Btn.BackgroundColor3 = newFriend and Color3.fromRGB(40, 150, 60) or Color3.fromRGB(50, 50, 50)
-                    Btn.TextColor3 = newFriend and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
-                    
-                    if plr.Character then
-                        local HL = plr.Character:FindFirstChild("MinimalistESP")
-                        local Dia = plr.Character:FindFirstChild("Head") and plr.Character.Head:FindFirstChild("DiamondESP") and plr.Character.Head.DiamondESP:FindFirstChild("Frame")
-                        local C = newFriend and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-                        if HL then HL.OutlineColor = C end
-                        if Dia then Dia.BackgroundColor3 = C end
-                    end
+                    RefreshPlayerList()
                 end)
             end
         end
@@ -528,7 +552,7 @@ local function GetTarget()
     return Closest
 end
 
--- // LOOP PRINCIPAL // --
+-- // LOOP AIMBOT PRINCIPAL (MATEMÁTICA CORREGIDA) // --
 RunService.RenderStepped:Connect(function()
     Circle.Position = UserInputService:GetMouseLocation()
     Circle.Radius = Config.FOV
@@ -550,7 +574,24 @@ RunService.RenderStepped:Connect(function()
                     if Mag < 15 then mouse1click() end
                 end
                 
-                mousemoverel(DistX / Config.Smoothness, DistY / Config.Smoothness)
+                -- [[ NUEVA LÓGICA DE SUAVIDAD (FIX BUG) ]] --
+                -- Slider 0 (Suave) -> Divisor Alto (ej. 20)
+                -- Slider 10 (Fijo) -> Divisor Bajo (ej. 1)
+                
+                local SmoothFactor = Config.Smoothness
+                
+                -- Formula invertida: 
+                -- Si Slider es 10 -> (10 - 10) + 1 = 1 (Instantaneo)
+                -- Si Slider es 0 -> (10 - 0) + 1 = 11 (Lento)
+                -- Multiplicamos por un factor base para mayor suavidad en 0
+                
+                local Divisor = (10 - SmoothFactor) * 2 + 1 
+                
+                -- FIX: Si el divisor es demasiado pequeño (< 1), el aim se vuelve loco (bug de evitar enemigo)
+                -- Aseguramos que nunca sea menor a 1
+                if Divisor < 1 then Divisor = 1 end
+                
+                mousemoverel(DistX / Divisor, DistY / Divisor)
             end
         end
     end
